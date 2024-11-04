@@ -4,6 +4,7 @@ import sqlite3
 import time
 import getpass
 import socket
+import csv
 
 # Подключение к базе данных
 conn = sqlite3.connect('app.db')
@@ -119,11 +120,29 @@ def open_app_window(username):
 
     ttk.Button(frame, text="Выйти", command=logout).grid(row=1, column=0, pady=10)
 
+    def export_audit_log():
+        """Экспортирует журнал аудита в CSV файл."""
+        with open('audit_log.csv', mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            # Записываем заголовки
+            writer.writerow(["event_time", "user", "workstation", "event_type", "details"])
+
+            # Получаем данные из базы данных
+            c.execute('SELECT event_time, user, workstation, event_type, details FROM audit_log')
+            rows = c.fetchall()
+
+            # Записываем данные в CSV файл
+            writer.writerows(rows)
+
+        messagebox.showinfo("Экспорт завершён", "Журнал аудита был успешно экспортирован в audit_log.csv")
+
+
     def open_audit_log():
         audit_window = tk.Toplevel(app_window)
         audit_window.title("Журнал аудита")
 
-        tree = ttk.Treeview(audit_window, columns=("event_time", "user", "workstation", "event_type", "details"), show="headings")
+        tree = ttk.Treeview(audit_window, columns=("event_time", "user", "workstation", "event_type", "details"),
+                            show="headings")
         tree.heading("event_time", text="Дата и время")
         tree.heading("user", text="Пользователь")
         tree.heading("workstation", text="Раб. станция")
@@ -135,6 +154,9 @@ def open_app_window(username):
         rows = c.fetchall()
         for row in rows:
             tree.insert("", tk.END, values=row)
+
+        # Добавим кнопку для экспорта
+        ttk.Button(audit_window, text="Экспорт в CSV", command=export_audit_log).pack(pady=10)
 
     ttk.Button(frame, text="Журнал аудита", command=open_audit_log).grid(row=2, column=0, pady=10)
 
