@@ -140,7 +140,6 @@ def open_app_window(username):
 
 
 
-
     def open_settings():
         settings_window = tk.Toplevel(app_window)
         settings_window.title("Настройки безопасности")
