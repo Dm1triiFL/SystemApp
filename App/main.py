@@ -4,6 +4,8 @@ import sqlite3
 import time
 import getpass
 import socket
+import random
+import string
 import csv
 
 # Подключение к базе данных
@@ -51,13 +53,16 @@ c.execute('SELECT max_failed_attempts, block_time, inactivity_timeout FROM setti
 settings = c.fetchone()
 MAX_FAILED_ATTEMPTS, BLOCK_TIME, INACTIVITY_TIMEOUT = settings
 
+
 def log_event(user, event_type, details):
     event_time = time.strftime('%Y-%m-%d %H:%M:%S')
     os_user = getpass.getuser()  # Имя пользователя ОС
     workstation = socket.gethostname()  # Имя рабочей станции
-    c.execute('INSERT INTO audit_log (event_time, user, event_type, workstation, os_user, details) VALUES (?, ?, ?, ?, ?, ?)',
-              (event_time, user, event_type, workstation, os_user, details))
+    c.execute(
+        'INSERT INTO audit_log (event_time, user, event_type, workstation, os_user, details) VALUES (?, ?, ?, ?, ?, ?)',
+        (event_time, user, event_type, workstation, os_user, details))
     conn.commit()
+
 
 def login():
     username = entry_username.get()
@@ -88,19 +93,24 @@ def login():
         failed_attempts += 1
         if failed_attempts >= MAX_FAILED_ATTEMPTS:
             block_time = current_time + BLOCK_TIME
-            c.execute('UPDATE users SET failed_attempts=?, blocked_until=? WHERE username=?', (failed_attempts, block_time, username))
+            c.execute('UPDATE users SET failed_attempts=?, blocked_until=? WHERE username=?',
+                      (failed_attempts, block_time, username))
             conn.commit()
             messagebox.showerror("Ошибка", "Учётная запись заблокирована после 3 неудачных попыток.")
-            log_event(username, "Account Blocked", f"Учётная запись заблокирована после {failed_attempts} неудачных попыток.")
+            log_event(username, "Account Blocked",
+                      f"Учётная запись заблокирована после {failed_attempts} неудачных попыток.")
         else:
             c.execute('UPDATE users SET failed_attempts=? WHERE username=?', (failed_attempts, username))
             conn.commit()
-            messagebox.showerror("Ошибка", f"Неверный пароль. Осталось попыток: {MAX_FAILED_ATTEMPTS - failed_attempts}")
+            messagebox.showerror("Ошибка",
+                                 f"Неверный пароль. Осталось попыток: {MAX_FAILED_ATTEMPTS - failed_attempts}")
             log_event(username, "Failed Login", f"Неверный пароль. Попытки: {failed_attempts}")
+
 
 def reset_failed_attempts(username):
     c.execute('UPDATE users SET failed_attempts=0 WHERE username=?', (username,))
     conn.commit()
+
 
 def open_app_window(username):
     login_window.destroy()
@@ -120,22 +130,49 @@ def open_app_window(username):
 
     ttk.Button(frame, text="Выйти", command=logout).grid(row=1, column=0, pady=10)
 
+    # Добавление кнопки "Добавить пользователя"
+    def add_user():
+        add_user_window = tk.Toplevel(app_window)
+        add_user_window.title("Добавить пользователя")
+
+        ttk.Label(add_user_window, text="Имя пользователя:").grid(row=0, column=0, padx=10, pady=10)
+        new_username_entry = ttk.Entry(add_user_window)
+        new_username_entry.grid(row=0, column=1, padx=10, pady=10)
+
+        ttk.Label(add_user_window, text="Пароль:").grid(row=1, column=0, padx=10, pady=10)
+        new_password_entry = ttk.Entry(add_user_window, show="*")
+        new_password_entry.grid(row=1, column=1, padx=10, pady=10)
+
+        def register_user():
+            new_username = new_username_entry.get()
+            new_password = new_password_entry.get()
+            if not new_username or not new_password:
+                messagebox.showerror("Ошибка", "Имя пользователя и пароль не могут быть пустыми.")
+                return
+
+            try:
+                c.execute('INSERT INTO users (username, password) VALUES (?, ?)', (new_username, new_password))
+                conn.commit()
+                messagebox.showinfo("Успех", "Пользователь успешно добавлен.")
+                log_event(username, "User Added", f"Добавлен новый пользователь: {new_username}")
+                add_user_window.destroy()
+            except sqlite3.IntegrityError:
+                messagebox.showerror("Ошибка", "Пользователь с таким именем уже существует.")
+
+        ttk.Button(add_user_window, text="Зарегистрировать", command=register_user).grid(row=2, column=0, columnspan=2,
+                                                                                         pady=10)
+
+    ttk.Button(frame, text="Добавить пользователя", command=add_user).grid(row=2, column=0, pady=10)
+
     def export_audit_log():
-        """Экспортирует журнал аудита в CSV файл."""
         with open('audit_log.csv', mode='w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            # Записываем заголовки
             writer.writerow(["event_time", "user", "workstation", "event_type", "details"])
-
-            # Получаем данные из базы данных
             c.execute('SELECT event_time, user, workstation, event_type, details FROM audit_log')
             rows = c.fetchall()
-
-            # Записываем данные в CSV файл
             writer.writerows(rows)
 
         messagebox.showinfo("Экспорт завершён", "Журнал аудита был успешно экспортирован в audit_log.csv")
-
 
     def open_audit_log():
         audit_window = tk.Toplevel(app_window)
@@ -155,12 +192,9 @@ def open_app_window(username):
         for row in rows:
             tree.insert("", tk.END, values=row)
 
-        # Добавим кнопку для экспорта
         ttk.Button(audit_window, text="Экспорт в CSV", command=export_audit_log).pack(pady=10)
 
-    ttk.Button(frame, text="Журнал аудита", command=open_audit_log).grid(row=2, column=0, pady=10)
-
-
+    ttk.Button(frame, text="Журнал аудита", command=open_audit_log).grid(row=3, column=0, pady=10)
 
     def open_settings():
         settings_window = tk.Toplevel(app_window)
@@ -191,7 +225,7 @@ def open_app_window(username):
 
         ttk.Button(settings_window, text="Сохранить", command=save_settings).grid(row=3, column=0, columnspan=2)
 
-    ttk.Button(frame, text="Настройки", command=open_settings).grid(row=3, column=0, pady=10)
+    ttk.Button(frame, text="Настройки", command=open_settings).grid(row=4, column=0, pady=10)
 
     def on_inactivity():
         log_event(username, "Session Timeout", "Сеанс завершён из-за бездействия")
@@ -202,34 +236,6 @@ def open_app_window(username):
 
     app_window.mainloop()
 
-def register():
-    registration_window = tk.Toplevel(login_window)
-    registration_window.title("Регистрация")
-
-    tk.Label(registration_window, text="Имя пользователя").grid(row=0, column=0)
-    tk.Label(registration_window, text="Пароль").grid(row=1, column=0)
-
-    entry_new_username = tk.Entry(registration_window)
-    entry_new_password = tk.Entry(registration_window, show="*")
-    entry_new_username.grid(row=0, column=1)
-    entry_new_password.grid(row=1, column=1)
-
-    def submit_registration():
-        new_username = entry_new_username.get()
-        new_password = entry_new_password.get()
-
-        c.execute('SELECT * FROM users WHERE username=?', (new_username,))
-        if c.fetchone() is not None:
-            messagebox.showerror("Ошибка", "Имя пользователя уже существует.")
-            return
-
-        c.execute('INSERT INTO users (username, password) VALUES (?, ?)', (new_username, new_password))
-        conn.commit()
-        log_event(new_username, "User Registration", "Пользователь зарегистрировался")
-        messagebox.showinfo("Успех", "Регистрация прошла успешно!")
-        registration_window.destroy()
-
-    ttk.Button(registration_window, text="Зарегистрироваться", command=submit_registration).grid(row=2, column=0, columnspan=2)
 
 # Интерфейс окна авторизации
 login_window = tk.Tk()
@@ -248,14 +254,15 @@ entry_username.grid(row=0, column=1)
 entry_password.grid(row=1, column=1)
 
 ttk.Button(frame, text="Войти", command=login).grid(row=2, column=0, columnspan=2, pady=10)
-ttk.Button(frame, text="Регистрация", command=register).grid(row=3, column=0, columnspan=2)
 
 log_event("System", "System Start", "Система запущена")
 login_window.protocol("WM_DELETE_WINDOW", lambda: log_event("System", "System Stop", "Система остановлена"))
 
+
 def on_close():
     log_event("System", "System Stop", "Система остановлена")
     login_window.destroy()
+
 
 login_window.protocol("WM_DELETE_WINDOW", on_close)
 
